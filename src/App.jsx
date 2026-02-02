@@ -6,15 +6,19 @@ import {
   LogOut, 
   PlusCircle, 
   Star,
-  ChevronRight,
-  Info,
-  Award,
-  Globe,
-  ShieldCheck,
-  MapPin,
-  Phone,
-  Mail,
-  Clock
+  ChevronRight, 
+  Info, 
+  Award, 
+  Globe, 
+  ShieldCheck, 
+  MapPin, 
+  Phone, 
+  Mail, 
+  Clock,
+  Heart,
+  Filter,
+  ArrowUpDown,
+  Search
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -32,9 +36,11 @@ import {
   addDoc, 
   onSnapshot, 
   query, 
-  serverTimestamp,
-  deleteDoc,
-  doc
+  serverTimestamp, 
+  deleteDoc, 
+  doc,
+  setDoc,
+  getDoc
 } from 'firebase/firestore';
 
 // --- Theme Constants ---
@@ -56,6 +62,7 @@ const THEME = {
 };
 
 // --- Firebase Configuration ---
+// Use the environment variable provided by the platform instead of import.meta
 const firebaseConfig ={
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -64,9 +71,9 @@ const firebaseConfig ={
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
+
 if (!firebaseConfig.apiKey) {
-    // Fallback for development if not in the specific environment
-    console.warn("Firebase config not found in environment, using placeholder.");
+    console.warn("Firebase config not found in environment.");
 }
 
 const app = initializeApp(firebaseConfig);
@@ -175,9 +182,9 @@ const Navbar = ({ user, setView, view, isTransparent }) => {
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0, opacity: 0 });
   const tabsRef = useRef({});
 
-  // Navigation Items
   const navItems = [
     { id: 'inventory', label: 'Collection' },
+    ...(user && !isAdmin(user) ? [{ id: 'favorites', label: 'My Garage' }] : []),
     { id: 'home', label: 'Services' },
     ...(isAdmin(user) ? [{ id: 'add-car', label: 'Consign' }] : [])
   ];
@@ -188,7 +195,6 @@ const Navbar = ({ user, setView, view, isTransparent }) => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Update Sliding Line Position
   useEffect(() => {
     const activeTab = tabsRef.current[view];
     if (activeTab) {
@@ -200,7 +206,7 @@ const Navbar = ({ user, setView, view, isTransparent }) => {
     } else {
       setIndicatorStyle(prev => ({ ...prev, opacity: 0 }));
     }
-  }, [view, user]); // Re-run when view changes or items (user) change
+  }, [view, user]);
 
   const handleSignOut = async () => {
     try {
@@ -212,7 +218,6 @@ const Navbar = ({ user, setView, view, isTransparent }) => {
   };
 
   const isSolid = !isTransparent || scrolled;
-
   const navStyle = {
     backgroundColor: isSolid ? THEME.colors.cream : 'rgba(0,0,0,0.2)',
     borderBottom: isSolid ? `1px solid ${THEME.colors.gold}` : 'none',
@@ -230,7 +235,6 @@ const Navbar = ({ user, setView, view, isTransparent }) => {
     <nav className={`w-full py-6 px-6 md:px-12 fixed top-0 z-50 ${isSolid ? 'shadow-md py-4' : ''}`} 
       style={navStyle}>
       <div className="max-w-7xl mx-auto flex justify-between items-center">
-        {/* Logo */}
         <div 
           onClick={() => setView('home')}
           className="cursor-pointer group flex flex-col items-center"
@@ -241,10 +245,7 @@ const Navbar = ({ user, setView, view, isTransparent }) => {
           <span className="text-xs tracking-[0.6em] uppercase mt-1 transition-colors duration-500" style={{ color: logoAccent, fontFamily: THEME.fonts.heading }}>Automobiles</span>
         </div>
 
-        {/* Desktop Menu */}
         <div className="hidden md:flex items-center gap-12 relative">
-          
-          {/* Nav Items */}
           {navItems.map((item) => (
             <button
               key={item.id}
@@ -260,7 +261,6 @@ const Navbar = ({ user, setView, view, isTransparent }) => {
             </button>
           ))}
 
-          {/* Sliding Line Indicator */}
           <div 
             className="absolute bottom-0 h-[2px] transition-all duration-500 ease-out pointer-events-none"
             style={{ 
@@ -271,7 +271,6 @@ const Navbar = ({ user, setView, view, isTransparent }) => {
             }}
           />
 
-          {/* Auth Button */}
           {user ? (
             <div className={`flex items-center gap-4 border-l pl-8 ${borderColor}`}>
               <Button variant="primary" onClick={handleSignOut} className="text-xs py-2 px-6">Logout</Button>
@@ -283,13 +282,11 @@ const Navbar = ({ user, setView, view, isTransparent }) => {
           )}
         </div>
 
-        {/* Mobile Menu Toggle */}
         <button onClick={() => setIsOpen(!isOpen)} className="md:hidden text-2xl" style={{ color: textColor }}>
           {isOpen ? <X /> : <Menu />}
         </button>
       </div>
 
-      {/* Mobile Menu */}
       {isOpen && (
         <div className="md:hidden absolute top-full left-0 w-full h-screen py-12 shadow-xl" style={{ backgroundColor: THEME.colors.cream }}>
           <div className="flex flex-col items-center space-y-8">
@@ -448,6 +445,7 @@ const AddCarForm = ({ setView }) => {
                 <option>Sports</option>
                 <option>Pre-War</option>
                 <option>Luxury</option>
+                <option>Convertible</option>
               </select>
             </div>
           </div>
@@ -472,7 +470,7 @@ const AddCarForm = ({ setView }) => {
   );
 };
 
-const CarCard = ({ car, user }) => {
+const CarCard = ({ car, user, isFavorite, toggleFavorite }) => {
   const handleDelete = async (e) => {
     e.stopPropagation();
     if (!user || !car.id) return;
@@ -506,6 +504,19 @@ const CarCard = ({ car, user }) => {
              })}
            </span>
         </div>
+
+        {/* Favorite Button - Visible to all but interactive based on auth */}
+        {!isAdmin(user) && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); toggleFavorite(car.id); }}
+            className="absolute bottom-4 right-4 p-3 rounded-full bg-white/90 shadow-lg hover:bg-white transition-all transform hover:scale-110 z-20"
+          >
+            <Heart 
+              size={18} 
+              className={`transition-colors duration-300 ${isFavorite ? 'fill-[#722F37] text-[#722F37]' : 'text-[#1A1A1A]'}`} 
+            />
+          </button>
+        )}
 
         {isAdmin(user) && (
            <button 
@@ -546,13 +557,64 @@ const CarCard = ({ car, user }) => {
   );
 };
 
-const Inventory = ({ user, setView }) => {
+const FilterBar = ({ filters, setFilters }) => {
+    return (
+        <div className="bg-white p-6 mb-12 shadow-sm border border-stone-100 flex flex-col md:flex-row gap-6 items-center justify-between">
+            <div className="flex items-center gap-4 w-full md:w-auto">
+                 <div className="flex items-center gap-2 text-[#C5A059]">
+                    <Filter size={16} />
+                    <span className="text-xs font-bold uppercase tracking-widest">Filter</span>
+                 </div>
+                 <select 
+                    value={filters.category}
+                    onChange={(e) => setFilters({...filters, category: e.target.value})}
+                    className="bg-[#FDFBF7] border border-stone-200 px-4 py-2 text-sm font-serif min-w-[150px] focus:outline-none focus:border-[#C5A059]"
+                 >
+                    <option value="All">All Categories</option>
+                    <option value="Classic">Classic</option>
+                    <option value="Sports">Sports</option>
+                    <option value="Muscle">Muscle</option>
+                    <option value="Luxury">Luxury</option>
+                    <option value="Convertible">Convertible</option>
+                 </select>
+            </div>
+
+            <div className="flex items-center gap-4 w-full md:w-auto">
+                <div className="flex items-center gap-2 text-[#C5A059]">
+                    <ArrowUpDown size={16} />
+                    <span className="text-xs font-bold uppercase tracking-widest">Sort</span>
+                 </div>
+                 <select 
+                    value={filters.sort}
+                    onChange={(e) => setFilters({...filters, sort: e.target.value})}
+                    className="bg-[#FDFBF7] border border-stone-200 px-4 py-2 text-sm font-serif min-w-[200px] focus:outline-none focus:border-[#C5A059]"
+                 >
+                    <option value="newest">Newest Arrivals</option>
+                    <option value="price_asc">Price: Low to High</option>
+                    <option value="price_desc">Price: High to Low</option>
+                    <option value="year_desc">Year: Newest First</option>
+                    <option value="year_asc">Year: Oldest First</option>
+                 </select>
+            </div>
+        </div>
+    )
+}
+
+const Inventory = ({ user, setView, showFavoritesOnly = false }) => {
   const [cars, setCars] = useState([]);
+  const [filteredCars, setFilteredCars] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [favorites, setFavorites] = useState([]);
+  const [filters, setFilters] = useState({ category: 'All', sort: 'newest' });
 
+  // Fetch Inventory - MODIFIED: Runs immediately on mount, does NOT wait for user
   useEffect(() => {
-    if (!auth.currentUser) return;
+    // FIX: Guard with user to ensure auth token is ready for Firestore rules
+    // Even though it is public, Firebase rules require a valid auth token (even anonymous)
+    // The App component ensures an anonymous user is created on load.
+    if (!user) return;
 
+    setLoading(true);
     const collectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'inventory');
     const q = query(collectionRef); 
 
@@ -566,7 +628,80 @@ const Inventory = ({ user, setView }) => {
     });
 
     return () => unsubscribe();
+  }, [user]); // Add user back to dependency array
+
+  // Fetch User Favorites (Simulated persistence for logged in users)
+  useEffect(() => {
+      if (user && !isAdmin(user)) {
+          const fetchFavorites = async () => {
+              try {
+                const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'userdata', 'favorites');
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    setFavorites(docSnap.data().itemIds || []);
+                }
+              } catch (e) {
+                  console.error("Error fetching favorites", e);
+              }
+          }
+          fetchFavorites();
+      } else {
+        setFavorites([]); // Clear favorites on logout
+      }
   }, [user]);
+
+  // Apply Filters & Sorting
+  useEffect(() => {
+      let result = [...cars];
+
+      // 1. Filter by Favorites (if mode active)
+      if (showFavoritesOnly) {
+          result = result.filter(car => favorites.includes(car.id));
+      }
+
+      // 2. Filter by Category
+      if (filters.category !== 'All') {
+          result = result.filter(car => car.category === filters.category);
+      }
+
+      // 3. Sort
+      result.sort((a, b) => {
+          switch (filters.sort) {
+              case 'price_asc': return a.price - b.price;
+              case 'price_desc': return b.price - a.price;
+              case 'year_asc': return a.year - b.year;
+              case 'year_desc': return b.year - a.year;
+              default: return 0; // Newest (by creation) is default usually, or unsorted
+          }
+      });
+
+      setFilteredCars(result);
+  }, [cars, filters, favorites, showFavoritesOnly]);
+
+  const toggleFavorite = async (carId) => {
+      if (!user) {
+        // Simple alert for guests
+        alert("Please log in to save vehicles to your personal garage.");
+        return;
+      }
+      
+      let newFavorites;
+      if (favorites.includes(carId)) {
+          newFavorites = favorites.filter(id => id !== carId);
+      } else {
+          newFavorites = [...favorites, carId];
+      }
+      
+      setFavorites(newFavorites);
+
+      // Persist to Firestore
+      try {
+          const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'userdata', 'favorites');
+          await setDoc(docRef, { itemIds: newFavorites }, { merge: true });
+      } catch (e) {
+          console.error("Error saving favorites", e);
+      }
+  };
 
   const seedDatabase = async () => {
     try {
@@ -587,39 +722,54 @@ const Inventory = ({ user, setView }) => {
   return (
     <div className="min-h-screen pt-32 md:pt-40 pb-20 px-6" style={{ backgroundColor: THEME.colors.cream }}>
       <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-16 relative">
+        <div className="text-center mb-12 relative">
           <span className="text-xs font-bold tracking-[0.4em] uppercase text-stone-400 block mb-4">Established 1964</span>
           <h2 className="text-5xl md:text-6xl font-bold mb-6" style={{ fontFamily: THEME.fonts.heading, color: THEME.colors.charcoal }}>
-            The Collection
+            {showFavoritesOnly ? "The Private Garage" : "The Collection"}
           </h2>
           <p className="text-lg text-stone-500 max-w-2xl mx-auto italic" style={{ fontFamily: THEME.fonts.body }}>
-            "Cars are the sculptures of our everyday lives." — Chris Bangle
+            {showFavoritesOnly 
+                ? "Your curated selection of automotive excellence." 
+                : "\"Cars are the sculptures of our everyday lives.\" — Chris Bangle"}
           </p>
-          {isAdmin(user) && (
-             <div className="mt-8">
-               <Button onClick={() => setView('add-car')} variant="primary" className="text-xs">
-                 <PlusCircle size={14} className="inline mr-2 mb-0.5" /> Consign Vehicle
-               </Button>
-             </div>
+          {isAdmin(user) && !showFavoritesOnly && (
+              <div className="mt-8">
+                <Button onClick={() => setView('add-car')} variant="primary" className="text-xs">
+                  <PlusCircle size={14} className="inline mr-2 mb-0.5" /> Consign Vehicle
+                </Button>
+              </div>
           )}
         </div>
 
-        {cars.length === 0 ? (
+        <FilterBar filters={filters} setFilters={setFilters} />
+
+        {filteredCars.length === 0 ? (
           <div className="text-center py-24 border border-stone-300 bg-white shadow-sm max-w-2xl mx-auto p-12">
             <div className="mb-6 inline-block p-4 rounded-full bg-stone-50">
               <Car size={48} className="opacity-40" style={{ color: THEME.colors.leather }} />
             </div>
-            <h3 className="text-2xl mb-4 uppercase tracking-widest" style={{ fontFamily: THEME.fonts.heading, color: THEME.colors.charcoal }}>Archives Empty</h3>
-            <p className="mb-10 text-stone-500 font-serif">The showroom floor is currently being prepared for new arrivals.</p>
+            <h3 className="text-2xl mb-4 uppercase tracking-widest" style={{ fontFamily: THEME.fonts.heading, color: THEME.colors.charcoal }}>
+                {showFavoritesOnly ? "Garage Empty" : "Archives Empty"}
+            </h3>
+            <p className="mb-10 text-stone-500 font-serif">
+                {showFavoritesOnly ? "You haven't selected any vehicles for your private collection yet." : "No vehicles match your current search criteria."}
+            </p>
             <div className="flex justify-center gap-6">
-               {isAdmin(user) && <Button onClick={seedDatabase} variant="text">Restore Demo Collection</Button>}
-               {isAdmin(user) && <Button onClick={() => setView('add-car')} variant="outline">Manual Entry</Button>}
+               {isAdmin(user) && !showFavoritesOnly && <Button onClick={seedDatabase} variant="text">Restore Demo Collection</Button>}
+               {isAdmin(user) && !showFavoritesOnly && <Button onClick={() => setView('add-car')} variant="outline">Manual Entry</Button>}
+               {showFavoritesOnly && <Button onClick={() => setView('inventory')} variant="primary">Browse Collection</Button>}
             </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
-            {cars.map(car => (
-              <CarCard key={car.id} car={car} user={user} />
+            {filteredCars.map(car => (
+              <CarCard 
+                key={car.id} 
+                car={car} 
+                user={user} 
+                isFavorite={favorites.includes(car.id)}
+                toggleFavorite={toggleFavorite}
+              />
             ))}
           </div>
         )}
@@ -848,11 +998,12 @@ export default function App() {
           </>
         )}
         {view === 'inventory' && <Inventory user={user} setView={setView} />}
+        {view === 'favorites' && <Inventory user={user} setView={setView} showFavoritesOnly={true} />}
         {view === 'login' && <AuthForm type="login" setView={setView} />}
         {view === 'signup' && <AuthForm type="signup" setView={setView} />}
         {view === 'add-car' && (
-            isAdmin(user) ? <AddCarForm setView={setView} /> : 
-            (user ? <Inventory user={user} setView={setView} /> : <AuthForm type="login" setView={setView} />)
+           isAdmin(user) ? <AddCarForm setView={setView} /> : 
+           (user ? <Inventory user={user} setView={setView} /> : <AuthForm type="login" setView={setView} />)
         )}
       </main>
 
