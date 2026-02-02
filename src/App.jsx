@@ -18,7 +18,9 @@ import {
   Heart,
   Filter,
   ArrowUpDown,
-  Search
+  Search,
+  ArrowLeft,
+  Send
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -62,8 +64,7 @@ const THEME = {
 };
 
 // --- Firebase Configuration ---
-// Use the environment variable provided by the platform instead of import.meta
-const firebaseConfig ={
+const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -71,10 +72,6 @@ const firebaseConfig ={
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
-
-if (!firebaseConfig.apiKey) {
-    console.warn("Firebase config not found in environment.");
-}
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -133,7 +130,7 @@ const SectionSeparator = () => (
 );
 
 const Button = ({ children, onClick, variant = 'primary', className = '', type = 'button', disabled = false }) => {
-  const baseStyle = "px-8 py-3 transition-all duration-500 font-serif tracking-[0.15em] disabled:opacity-50 disabled:cursor-not-allowed text-sm relative overflow-hidden group";
+  const baseStyle = "px-8 py-3 transition-all duration-500 font-serif tracking-[0.15em] disabled:opacity-50 disabled:cursor-not-allowed text-sm relative overflow-hidden group flex items-center justify-center";
   
   const variants = {
     primary: `bg-[${THEME.colors.burgundy}] text-[${THEME.colors.cream}] border border-[${THEME.colors.burgundy}] hover:bg-[${THEME.colors.charcoal}] hover:border-[${THEME.colors.charcoal}] uppercase shadow-md`,
@@ -149,7 +146,7 @@ const Button = ({ children, onClick, variant = 'primary', className = '', type =
       className={`${baseStyle} ${variants[variant]} ${className}`}
       style={{ fontFamily: THEME.fonts.heading }}
     >
-      <span className="relative z-10">{children}</span>
+      <span className="relative z-10 flex items-center gap-2">{children}</span>
     </button>
   );
 };
@@ -271,7 +268,7 @@ const Navbar = ({ user, setView, view, isTransparent }) => {
             }}
           />
 
-          {user ? (
+          {user && isAdmin(user) ? (
             <div className={`flex items-center gap-4 border-l pl-8 ${borderColor}`}>
               <Button variant="primary" onClick={handleSignOut} className="text-xs py-2 px-6">Logout</Button>
             </div>
@@ -292,9 +289,9 @@ const Navbar = ({ user, setView, view, isTransparent }) => {
           <div className="flex flex-col items-center space-y-8">
             <button onClick={() => { setView('inventory'); setIsOpen(false); }} className="text-xl font-serif" style={{ color: THEME.colors.leather }}>The Collection</button>
             <button onClick={() => { setView('home'); setIsOpen(false); }} className="text-xl font-serif" style={{ color: THEME.colors.leather }}>Our Services</button>
-            {user ? (
+            {user && isAdmin(user) ? (
               <>
-                 {isAdmin(user) && <button onClick={() => { setView('add-car'); setIsOpen(false); }} className="text-xl font-serif" style={{ color: THEME.colors.leather }}>Consign Vehicle</button>}
+                 <button onClick={() => { setView('add-car'); setIsOpen(false); }} className="text-xl font-serif" style={{ color: THEME.colors.leather }}>Consign Vehicle</button>
                  <Button variant="primary" onClick={() => { handleSignOut(); setIsOpen(false); }}>Log Out</Button>
               </>
             ) : (
@@ -376,6 +373,95 @@ const AuthForm = ({ type, setView }) => {
       </div>
     </div>
   );
+};
+
+const InquireForm = ({ car, setView }) => {
+    const [formData, setFormData] = useState({
+      name: '',
+      email: '',
+      phone: '',
+      message: `I am interested in the ${car?.year} ${car?.make} ${car?.model}. Please provide more information.`
+    });
+    const [loading, setLoading] = useState(false);
+    const [sent, setSent] = useState(false);
+  
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      setLoading(true);
+      
+      // Simulate network request or actual DB save if needed
+      try {
+        const collectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'inquiries');
+        await addDoc(collectionRef, {
+            ...formData,
+            carId: car?.id || 'unknown',
+            carName: `${car?.year} ${car?.make} ${car?.model}`,
+            createdAt: serverTimestamp()
+        });
+        setSent(true);
+      } catch (err) {
+        console.error("Error sending inquiry:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+  
+    if (sent) {
+        return (
+            <div className="min-h-screen flex items-center justify-center p-4">
+                <div className="max-w-xl w-full bg-white p-12 text-center shadow-2xl border border-stone-200">
+                    <div className="mb-6 inline-block p-4 rounded-full bg-[#F9F5EB]">
+                        <Send size={40} className="text-[#C5A059]" />
+                    </div>
+                    <h2 className="text-3xl font-bold mb-4 uppercase tracking-widest" style={{ fontFamily: THEME.fonts.heading }}>Inquiry Received</h2>
+                    <p className="text-stone-500 mb-8 font-serif">Thank you for your interest. A Prestige concierge will contact you shortly regarding the {car?.make} {car?.model}.</p>
+                    <Button onClick={() => setView('inventory')} variant="primary">Return to Collection</Button>
+                </div>
+            </div>
+        );
+    }
+  
+    return (
+      <div className="min-h-screen pt-32 md:pt-40 pb-12 px-4">
+        <div className="max-w-2xl mx-auto p-12 bg-white shadow-xl relative border border-stone-200">
+           <button onClick={() => setView('inventory')} className="absolute top-8 left-8 text-stone-400 hover:text-[#C5A059] transition-colors">
+               <ArrowLeft size={24} />
+           </button>
+  
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-bold mb-2 uppercase tracking-widest" style={{ fontFamily: THEME.fonts.heading, color: THEME.colors.charcoal }}>
+              Request Details
+            </h2>
+            <p className="text-sm font-serif text-[#C5A059] uppercase tracking-widest mt-4">
+                {car?.year} {car?.make} {car?.model}
+            </p>
+          </div>
+  
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <Input label="Full Name" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required placeholder="e.g. Eleanor Vance" />
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <Input label="Email Address" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required placeholder="name@example.com" />
+                 <Input label="Phone Number" type="tel" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} placeholder="+1 (555) 000-0000" />
+            </div>
+            
+            <div className="mb-8">
+              <label className="block text-xs font-bold mb-2 uppercase tracking-[0.2em]" style={{ color: THEME.colors.leather, fontFamily: THEME.fonts.heading }}>Message</label>
+              <textarea
+                value={formData.message}
+                onChange={(e) => setFormData({...formData, message: e.target.value})}
+                className="w-full px-4 py-3 bg-[#FDFBF7] border focus:outline-none h-32 resize-none leading-relaxed"
+                style={{ borderColor: THEME.colors.paper, fontFamily: THEME.fonts.body, color: THEME.colors.charcoal }}
+              />
+            </div>
+            
+            <Button type="submit" variant="primary" className="w-full" disabled={loading}>
+              {loading ? 'Sending Request...' : 'Submit Inquiry'}
+            </Button>
+          </form>
+        </div>
+      </div>
+    );
 };
 
 const AddCarForm = ({ setView }) => {
@@ -470,7 +556,7 @@ const AddCarForm = ({ setView }) => {
   );
 };
 
-const CarCard = ({ car, user, isFavorite, toggleFavorite }) => {
+const CarCard = ({ car, user, isFavorite, toggleFavorite, onInquire }) => {
   const handleDelete = async (e) => {
     e.stopPropagation();
     if (!user || !car.id) return;
@@ -484,7 +570,7 @@ const CarCard = ({ car, user, isFavorite, toggleFavorite }) => {
   };
 
   return (
-    <div className="group bg-white shadow-xl transition-all duration-500 hover:shadow-2xl border border-stone-200 hover:border-stone-300">
+    <div className="group bg-white shadow-xl transition-all duration-500 hover:shadow-2xl border border-stone-200 hover:border-stone-300 flex flex-col h-full">
       <div className="relative h-72 overflow-hidden border-b-4" style={{ borderColor: THEME.colors.gold }}>
         <img 
           src={car.imageUrl || 'https://via.placeholder.com/800x600?text=No+Image+Available'} 
@@ -505,8 +591,8 @@ const CarCard = ({ car, user, isFavorite, toggleFavorite }) => {
            </span>
         </div>
 
-        {/* Favorite Button - Visible to all but interactive based on auth */}
-        {!isAdmin(user) && (
+        {/* Favorite Button - Only for non-admin users to keep UI clean */}
+        {user && !isAdmin(user) && (
           <button 
             onClick={(e) => { e.stopPropagation(); toggleFavorite(car.id); }}
             className="absolute bottom-4 right-4 p-3 rounded-full bg-white/90 shadow-lg hover:bg-white transition-all transform hover:scale-110 z-20"
@@ -521,14 +607,14 @@ const CarCard = ({ car, user, isFavorite, toggleFavorite }) => {
         {isAdmin(user) && (
            <button 
              onClick={handleDelete}
-             className="absolute top-4 left-4 bg-white/90 text-red-900 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+             className="absolute top-4 left-4 bg-white/90 text-red-900 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-30"
            >
              <LogOut size={16} />
            </button>
         )}
       </div>
       
-      <div className="p-8 relative bg-white">
+      <div className="p-8 relative bg-white flex flex-col flex-grow">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-4 py-1 border border-stone-200 shadow-sm text-[10px] uppercase tracking-[0.2em]" style={{ color: THEME.colors.gold, fontFamily: THEME.fonts.heading }}>
           {car.category}
         </div>
@@ -543,12 +629,16 @@ const CarCard = ({ car, user, isFavorite, toggleFavorite }) => {
           <div className="h-px w-12 bg-gray-200 mx-auto"></div>
         </div>
 
-        <p className="text-sm leading-7 mb-8 text-gray-600 text-center line-clamp-3" style={{ fontFamily: THEME.fonts.body }}>
+        <p className="text-sm leading-7 mb-8 text-gray-600 text-center line-clamp-3 flex-grow" style={{ fontFamily: THEME.fonts.body }}>
           {car.description}
         </p>
         
-        <div className="flex justify-center">
-          <button className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] group-hover:gap-4 transition-all duration-300" style={{ color: THEME.colors.burgundy, fontFamily: THEME.fonts.heading }}>
+        <div className="flex justify-center mt-auto">
+          <button 
+            onClick={() => onInquire(car)}
+            className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] group-hover:gap-4 transition-all duration-300 py-2 border-b border-transparent hover:border-[#722F37]" 
+            style={{ color: THEME.colors.burgundy, fontFamily: THEME.fonts.heading }}
+          >
             Inquire <ChevronRight size={14} />
           </button>
         </div>
@@ -600,20 +690,18 @@ const FilterBar = ({ filters, setFilters }) => {
     )
 }
 
-const Inventory = ({ user, setView, showFavoritesOnly = false }) => {
+const Inventory = ({ user, setView, showFavoritesOnly = false, onInquire }) => {
   const [cars, setCars] = useState([]);
   const [filteredCars, setFilteredCars] = useState([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState([]);
   const [filters, setFilters] = useState({ category: 'All', sort: 'newest' });
 
-  // Fetch Inventory - MODIFIED: Runs immediately on mount, does NOT wait for user
+  // Fetch Inventory - Using a robust method that doesn't strictly depend on user state for UI blocking
   useEffect(() => {
-    // FIX: Guard with user to ensure auth token is ready for Firestore rules
-    // Even though it is public, Firebase rules require a valid auth token (even anonymous)
-    // The App component ensures an anonymous user is created on load.
-    if (!user) return;
-
+    // We attempt to fetch. If auth isn't ready, the onSnapshot might fail or wait.
+    // The main App component ensures anonymous auth is triggered.
+    
     setLoading(true);
     const collectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'inventory');
     const q = query(collectionRef); 
@@ -624,11 +712,12 @@ const Inventory = ({ user, setView, showFavoritesOnly = false }) => {
       setLoading(false);
     }, (error) => {
       console.error("Error fetching inventory:", error);
+      // Don't show error to user, just stop loading. Auth might be still initializing.
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [user]); // Add user back to dependency array
+  }, [user]); // Re-run if user state changes (e.g., from anon to logged in)
 
   // Fetch User Favorites (Simulated persistence for logged in users)
   useEffect(() => {
@@ -680,8 +769,7 @@ const Inventory = ({ user, setView, showFavoritesOnly = false }) => {
 
   const toggleFavorite = async (carId) => {
       if (!user) {
-        // Simple alert for guests
-        alert("Please log in to save vehicles to your personal garage.");
+        // Should not happen often with anon auth, but just in case
         return;
       }
       
@@ -717,7 +805,7 @@ const Inventory = ({ user, setView, showFavoritesOnly = false }) => {
     }
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center font-serif text-xl tracking-widest uppercase animate-pulse" style={{ color: THEME.colors.gold }}>Opening Archives...</div>;
+  if (loading && cars.length === 0) return <div className="min-h-screen flex items-center justify-center font-serif text-xl tracking-widest uppercase animate-pulse" style={{ color: THEME.colors.gold }}>Opening Archives...</div>;
 
   return (
     <div className="min-h-screen pt-32 md:pt-40 pb-20 px-6" style={{ backgroundColor: THEME.colors.cream }}>
@@ -732,7 +820,7 @@ const Inventory = ({ user, setView, showFavoritesOnly = false }) => {
                 ? "Your curated selection of automotive excellence." 
                 : "\"Cars are the sculptures of our everyday lives.\" — Chris Bangle"}
           </p>
-          {isAdmin(user) && !showFavoritesOnly && (
+          {user && isAdmin(user) && !showFavoritesOnly && (
               <div className="mt-8">
                 <Button onClick={() => setView('add-car')} variant="primary" className="text-xs">
                   <PlusCircle size={14} className="inline mr-2 mb-0.5" /> Consign Vehicle
@@ -743,7 +831,7 @@ const Inventory = ({ user, setView, showFavoritesOnly = false }) => {
 
         <FilterBar filters={filters} setFilters={setFilters} />
 
-        {filteredCars.length === 0 ? (
+        {filteredCars.length === 0 && !loading ? (
           <div className="text-center py-24 border border-stone-300 bg-white shadow-sm max-w-2xl mx-auto p-12">
             <div className="mb-6 inline-block p-4 rounded-full bg-stone-50">
               <Car size={48} className="opacity-40" style={{ color: THEME.colors.leather }} />
@@ -769,6 +857,7 @@ const Inventory = ({ user, setView, showFavoritesOnly = false }) => {
                 user={user} 
                 isFavorite={favorites.includes(car.id)}
                 toggleFavorite={toggleFavorite}
+                onInquire={onInquire}
               />
             ))}
           </div>
@@ -950,9 +1039,12 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('home'); 
   const [authInitialized, setAuthInitialized] = useState(false);
+  const [inquireCar, setInquireCar] = useState(null);
 
   useEffect(() => {
     const initAuth = async () => {
+      // NOTE: We keep this hidden authentication to ensure the database connection 
+      // is secure and stable, but to the user, the site appears completely public.
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
         await signInWithCustomToken(auth, __initial_auth_token);
       } else {
@@ -968,6 +1060,11 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  const handleInquire = (car) => {
+      setInquireCar(car);
+      setView('inquire');
+  };
 
   if (!authInitialized) return null;
 
@@ -997,13 +1094,16 @@ export default function App() {
             <Features />
           </>
         )}
-        {view === 'inventory' && <Inventory user={user} setView={setView} />}
-        {view === 'favorites' && <Inventory user={user} setView={setView} showFavoritesOnly={true} />}
+        {view === 'inventory' && <Inventory user={user} setView={setView} onInquire={handleInquire} />}
+        {view === 'favorites' && <Inventory user={user} setView={setView} showFavoritesOnly={true} onInquire={handleInquire} />}
+        {view === 'inquire' && <InquireForm car={inquireCar} setView={setView} />}
+        
         {view === 'login' && <AuthForm type="login" setView={setView} />}
         {view === 'signup' && <AuthForm type="signup" setView={setView} />}
+        
         {view === 'add-car' && (
            isAdmin(user) ? <AddCarForm setView={setView} /> : 
-           (user ? <Inventory user={user} setView={setView} /> : <AuthForm type="login" setView={setView} />)
+           (user ? <Inventory user={user} setView={setView} onInquire={handleInquire} /> : <AuthForm type="login" setView={setView} />)
         )}
       </main>
 
